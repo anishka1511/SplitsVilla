@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search as SearchIcon, MapPin, Sliders, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -19,18 +19,29 @@ import {
 
 const sortOptions = ["Recommended", "Price: Low to High", "Price: High to Low", "Rating"];
 const propertyTypes = ["All", "Villa", "Apartment", "Hotel", "Hostel", "Resort", "Cottage"];
+const quickAmenityOptions = ["WiFi", "Kitchen", "Pool", "Parking", "AC", "Gym"];
+const PRICE_MIN = 0;
+const PRICE_MAX = 50000;
+const RATING_MIN = 0;
+const RATING_MAX = 5;
 
 export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [sortBy, setSortBy] = useState(parseInt(searchParams.get("sort") || "0"));
   const [activeType, setActiveType] = useState(searchParams.get("type") || "All");
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | undefined>();
   const [priceMin, setPriceMin] = useState(parseInt(searchParams.get("priceMin") || "0"));
-  const [priceMax, setPriceMax] = useState(parseInt(searchParams.get("priceMax") || "50000"));
-  const [minRating, setMinRating] = useState(parseInt(searchParams.get("rating") || "0"));
+  const [priceMax, setPriceMax] = useState(parseInt(searchParams.get("priceMax") || String(PRICE_MAX)));
+  const [minRating, setMinRating] = useState(parseFloat(searchParams.get("ratingMin") || searchParams.get("rating") || "0"));
+  const [maxRating, setMaxRating] = useState(parseFloat(searchParams.get("ratingMax") || String(RATING_MAX)));
+  const [selectedAmenities, setSelectedAmenities] = useState(
+    searchParams.get("amenities")?.split(",").filter(Boolean) || []
+  );
   const [showFilters, setShowFilters] = useState(false);
   const categoryParam = searchParams.get("category");
+  const shouldFocusSearch = searchParams.get("focus") === "1";
 
   useEffect(() => {
     if (categoryParam) {
@@ -48,6 +59,12 @@ export default function SearchPage() {
     }
   }, [categoryParam]);
 
+  useEffect(() => {
+    if (shouldFocusSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [shouldFocusSearch]);
+
   // Update URL params on filter change
   useEffect(() => {
     const params = new URLSearchParams();
@@ -55,10 +72,22 @@ export default function SearchPage() {
     if (activeType !== "All") params.set("type", activeType);
     if (sortBy !== 0) params.set("sort", sortBy.toString());
     if (priceMin > 0) params.set("priceMin", priceMin.toString());
-    if (priceMax < 50000) params.set("priceMax", priceMax.toString());
-    if (minRating > 0) params.set("rating", minRating.toString());
+    if (priceMax < PRICE_MAX) params.set("priceMax", priceMax.toString());
+    if (minRating > 0) params.set("ratingMin", minRating.toString());
+    if (maxRating < RATING_MAX) params.set("ratingMax", maxRating.toString());
+    if (selectedAmenities.length > 0) params.set("amenities", selectedAmenities.join(","));
     setSearchParams(params);
-  }, [query, activeType, sortBy, priceMin, priceMax, minRating, setSearchParams]);
+  }, [
+    query,
+    activeType,
+    sortBy,
+    priceMin,
+    priceMax,
+    minRating,
+    maxRating,
+    selectedAmenities,
+    setSearchParams,
+  ]);
 
   const { data: apiProperties = [], isLoading } = useSearchProperties(
     query || activeType !== "All"
@@ -76,8 +105,11 @@ export default function SearchPage() {
         p.location.city.toLowerCase().includes(query.toLowerCase());
       const matchesType = activeType === "All" || p.type.toLowerCase() === activeType.toLowerCase();
       const matchesPrice = p.pricePerNight >= priceMin && p.pricePerNight <= priceMax;
-      const matchesRating = p.rating >= minRating;
-      return matchesQuery && matchesType && matchesPrice && matchesRating;
+      const matchesRating = p.rating >= minRating && p.rating <= maxRating;
+      const matchesAmenities =
+        selectedAmenities.length === 0 ||
+        selectedAmenities.every((amenity) => p.amenities.includes(amenity));
+      return matchesQuery && matchesType && matchesPrice && matchesRating && matchesAmenities;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -91,6 +123,14 @@ export default function SearchPage() {
           return 0;
       }
     });
+
+  const hasActiveFilters =
+    activeType !== "All" ||
+    selectedAmenities.length > 0 ||
+    priceMin > 0 ||
+    priceMax < PRICE_MAX ||
+    minRating > 0 ||
+    maxRating < RATING_MAX;
 
   return (
     <PageTransitionWrapper>
@@ -127,14 +167,11 @@ export default function SearchPage() {
             transition={{ delay: 0.2 }}
           >
             <div className="relative flex-1">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                className="absolute left-3 top-1/2 -translate-y-1/2"
-              >
+              <div className="absolute left-3 top-1/2 -translate-y-1/2">
                 <SearchIcon className="h-5 w-5 text-primary" />
-              </motion.div>
+              </div>
               <Input
+                ref={searchInputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search by city or property..."
@@ -152,74 +189,138 @@ export default function SearchPage() {
           </motion.div>
 
           <motion.div
-            className="mt-4 flex gap-2 overflow-x-auto scrollbar-hide"
+            className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.3 }}
           >
-            {propertyTypes.map((t) => (
-              <motion.button
-                key={t}
-                onClick={() => setActiveType(t)}
-                className={`shrink-0 rounded-full px-4 py-2 font-medium ${
-                  t === activeType
-                    ? "bg-primary/30 text-card ring-2 ring-primary/50"
-                    : "border border-primary/20 bg-primary/10"
-                }`}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {t}
-              </motion.button>
-            ))}
-          </motion.div>
-
-          <motion.div className="mt-4 flex gap-4">
-            <p className="text-sm font-semibold text-primary">{filtered.length} properties</p>
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="flex gap-3 overflow-x-auto py-1">
               {sortOptions.map((s, i) => (
                 <motion.button
                   key={s}
                   onClick={() => setSortBy(i)}
-                  className={`text-sm font-medium ${i === sortBy ? "text-primary underline" : "text-muted-foreground"}`}
+                  className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                    i === sortBy
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                      : "bg-card text-muted-foreground hover:bg-accent"
+                  }`}
                   whileHover={{ scale: 1.05 }}
                 >
                   {s}
                 </motion.button>
               ))}
             </div>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters((prev) => !prev)}
+                className="gap-2"
+              >
+                <Sliders className="h-4 w-4" />
+                Filters
+                {hasActiveFilters && !showFilters ? (
+                  <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+                    Applied
+                  </span>
+                ) : null}
+                {showFilters ? <X className="h-4 w-4" /> : null}
+              </Button>
+              {hasActiveFilters ? (
+                <span className="text-xs text-muted-foreground">{filtered.length} properties</span>
+              ) : null}
+            </div>
           </motion.div>
 
           {/* Advanced Filters */}
-          {(showFilters || window.innerWidth >= 1024) && (
+          {showFilters && (
             <motion.div
               className="mt-6 rounded-2xl border border-primary/20 bg-card p-6"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
             >
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div>
+                  <label className="text-sm font-medium text-foreground">Type of place</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {propertyTypes.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setActiveType(t)}
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                          t === activeType
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-border bg-background text-foreground hover:bg-accent"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-foreground">Amenities</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {quickAmenityOptions.map((amenity) => {
+                      const isActive = selectedAmenities.includes(amenity);
+                      return (
+                        <button
+                          key={amenity}
+                          onClick={() =>
+                            setSelectedAmenities((prev) =>
+                              prev.includes(amenity)
+                                ? prev.filter((item) => item !== amenity)
+                                : [...prev, amenity]
+                            )
+                          }
+                          className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                            isActive
+                              ? "bg-primary text-primary-foreground"
+                              : "border border-border bg-background text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          {amenity}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-sm font-medium text-foreground">
-                    Price Range: ₹{priceMin.toLocaleString()} - ₹{priceMax.toLocaleString()}
+                    Price range: Rs {priceMin.toLocaleString()} - Rs {priceMax.toLocaleString()}
                   </label>
-                  <div className="mt-2 space-y-2">
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Minimum price</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-foreground">Rs {priceMin.toLocaleString()}</span>
+                    </div>
                     <Input
                       type="range"
-                      min="0"
-                      max="50000"
-                      step="1000"
+                      min={PRICE_MIN}
+                      max={PRICE_MAX}
+                      step="500"
                       value={priceMin}
-                      onChange={(e) => setPriceMin(parseInt(e.target.value))}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value);
+                        setPriceMin(Math.min(value, priceMax));
+                      }}
                       className="w-full"
                     />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Maximum price</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-foreground">Rs {priceMax.toLocaleString()}</span>
+                    </div>
                     <Input
                       type="range"
-                      min="0"
-                      max="50000"
-                      step="1000"
+                      min={PRICE_MIN}
+                      max={PRICE_MAX}
+                      step="500"
                       value={priceMax}
-                      onChange={(e) => setPriceMax(parseInt(e.target.value))}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value);
+                        setPriceMax(Math.max(value, priceMin));
+                      }}
                       className="w-full"
                     />
                   </div>
@@ -227,16 +328,39 @@ export default function SearchPage() {
 
                 <div>
                   <label className="text-sm font-medium text-foreground">
-                    Minimum Rating: {minRating > 0 ? `${minRating.toFixed(1)}★` : "All"}
+                    Rating range: {minRating.toFixed(1)} - {maxRating.toFixed(1)}
                   </label>
-                  <div className="mt-2">
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Minimum rating</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-foreground">{minRating.toFixed(1)}★</span>
+                    </div>
                     <Input
                       type="range"
-                      min="0"
-                      max="5"
+                      min={RATING_MIN}
+                      max={RATING_MAX}
                       step="0.5"
                       value={minRating}
-                      onChange={(e) => setMinRating(parseFloat(e.target.value))}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value);
+                        setMinRating(Math.min(value, maxRating));
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Maximum rating</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-foreground">{maxRating.toFixed(1)}★</span>
+                    </div>
+                    <Input
+                      type="range"
+                      min={RATING_MIN}
+                      max={RATING_MAX}
+                      step="0.5"
+                      value={maxRating}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value);
+                        setMaxRating(Math.max(value, minRating));
+                      }}
                       className="w-full"
                     />
                   </div>
@@ -247,12 +371,21 @@ export default function SearchPage() {
                     variant="outline"
                     onClick={() => {
                       setPriceMin(0);
-                      setPriceMax(50000);
+                      setPriceMax(PRICE_MAX);
                       setMinRating(0);
+                      setMaxRating(RATING_MAX);
+                      setActiveType("All");
+                      setSelectedAmenities([]);
                     }}
                     className="w-full"
                   >
                     Reset Filters
+                  </Button>
+                  <Button
+                    onClick={() => setShowFilters(false)}
+                    className="w-full"
+                  >
+                    Done
                   </Button>
                 </div>
               </div>
