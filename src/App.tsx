@@ -27,6 +27,7 @@ const Bookings = lazy(() => import("./pages/Bookings"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const TripHistory = lazy(() => import("./pages/TripHistory"));
 const HostDashboard = lazy(() => import("./pages/HostDashboard"));
+const BecomeAHost = lazy(() => import("./pages/BecomeAHost"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -147,6 +148,7 @@ const App = () => {
                       </ProtectedRoute>
                     }
                   />
+                  <Route path="/become-host" element={<BecomeAHost />} />
                   <Route
                     path="/host"
                     element={

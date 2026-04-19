@@ -50,14 +50,12 @@ export default function Navbar() {
         </button>
 
         <div className="flex items-center gap-1 lg:gap-2">
-          {isAuthenticated && (
-            <Link
-              to="/host"
-              className="hidden rounded-full px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/80 md:block"
-            >
-              Become a Host
-            </Link>
-          )}
+          <Link
+            to="/become-host"
+            className="hidden rounded-full px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/80 md:block"
+          >
+            Become a Host
+          </Link>
 
           {/* Desktop navigation links */}
           {isAuthenticated && (
@@ -137,6 +135,13 @@ export default function Navbar() {
                         className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-accent"
                       >
                         <Home className="h-4 w-4" /> Dashboard
+                      </Link>
+                      <Link
+                        to="/become-host"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-accent"
+                      >
+                        <Plus className="h-4 w-4" /> Become a Host
                       </Link>
                       <Link
                         to="/dashboard/trips"
