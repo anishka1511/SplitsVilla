@@ -12,6 +12,34 @@ import { mockProperties, mockReviews } from "@/utils/mockData";
 import { formatCurrency } from "@/utils/formatCurrency";
 import { useToast } from "@/hooks/use-toast";
 import { useCreateBooking, useProperty, usePropertyReviews, useShortlistProperty, useTrips } from "@/hooks/useApi";
+import type { Property } from "@/types";
+
+const HOST_LISTINGS_KEY = "sv_host_listings";
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=1200";
+
+type HostLocalListing = {
+  id: string;
+  title: string;
+  type: string;
+  address: string;
+  city: string;
+  country: string;
+  pricePerNight: number;
+  maxGuests: number;
+  bedrooms: number;
+  bathrooms: number;
+  images: string[];
+  description: string;
+  amenities: string[];
+  createdAt: string;
+};
+
+function getFallbackCoordinates(seed: string) {
+  const hash = Array.from(seed || "host").reduce((acc, char, idx) => acc + char.charCodeAt(0) * (idx + 1), 0);
+  const lat = 20.5937 + ((hash % 300) - 150) * 0.01;
+  const lng = 78.9629 + ((hash % 500) - 250) * 0.01;
+  return { lat, lng };
+}
 
 const amenityIcons: Record<string, React.ReactNode> = {
   WiFi: <Wifi className="h-5 w-5" />, Pool: <Waves className="h-5 w-5" />, AC: <Wind className="h-5 w-5" />,
@@ -24,7 +52,60 @@ export default function PropertyDetail() {
   const { toast } = useToast();
   const isMongoId = /^[a-f\d]{24}$/i.test(id || "");
   const { data: apiProperty } = useProperty(isMongoId ? id : undefined);
-  const fallbackProperty = mockProperties.find((p) => p.id === id) || mockProperties[0];
+  const hostedProperties = useMemo<Property[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(HOST_LISTINGS_KEY);
+      const parsed = raw ? (JSON.parse(raw) as HostLocalListing[]) : [];
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed
+        .filter((listing) => Boolean(listing?.id && listing?.title))
+        .map((listing) => {
+          const coords = getFallbackCoordinates(`${listing.city}-${listing.id}`);
+          return {
+            id: listing.id,
+            hostId: "host-local",
+            hostName: "You",
+            title: listing.title,
+            description: listing.description || "Hosted listing",
+            type: (listing.type?.toLowerCase() || "villa") as Property["type"],
+            location: {
+              address: listing.address || "Address pending",
+              city: listing.city || "City pending",
+              country: listing.country || "India",
+              lat: coords.lat,
+              lng: coords.lng,
+            },
+            images: listing.images?.length ? listing.images : [FALLBACK_IMAGE],
+            pricePerNight: Number(listing.pricePerNight || 0),
+            maxGuests: Number(listing.maxGuests || 1),
+            bedrooms: Number(listing.bedrooms || 1),
+            bathrooms: Number(listing.bathrooms || 1),
+            beds: Math.max(1, Number(listing.bedrooms || 1)),
+            amenities: listing.amenities?.length ? listing.amenities : ["WiFi"],
+            rules: {
+              checkInTime: "14:00",
+              checkOutTime: "11:00",
+              smokingAllowed: false,
+              petsAllowed: true,
+              partiesAllowed: false,
+            },
+            rating: 4.7,
+            reviewCount: 0,
+            isFeatured: false,
+            isActive: true,
+            createdAt: listing.createdAt || new Date().toISOString(),
+          };
+        });
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const fallbackProperty =
+    mockProperties.find((p) => p.id === id) || hostedProperties.find((p) => p.id === id) || mockProperties[0];
   const property = apiProperty || fallbackProperty;
 
   const { mutateAsync: createBooking, isPending: isCreatingBooking } = useCreateBooking();

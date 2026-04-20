@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Search, Bell, Menu, Plus, User, LogOut, Map, Heart, Calendar, Home, Settings } from "lucide-react";
+import { Search, Bell, Menu, Plus, User, LogOut, Map, Heart, Calendar, Home, Settings, ChevronDown } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/hooks/useApi";
 
@@ -60,12 +60,31 @@ export default function Navbar() {
           {/* Desktop navigation links */}
           {isAuthenticated && (
             <>
-              <Link
-                to="/dashboard"
-                className="hidden rounded-full px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/80 lg:block"
-              >
-                Dashboard
-              </Link>
+              <div className="group relative hidden lg:block">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/80 group-focus-within:bg-accent/80"
+                  aria-label="Open dashboard options"
+                >
+                  Dashboard
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-hover:rotate-180 group-focus-within:rotate-180" />
+                </button>
+
+                <div className="invisible absolute left-0 top-11 z-50 w-56 rounded-2xl border border-border/80 bg-card/95 p-2 opacity-0 shadow-2xl backdrop-blur-sm transition-all group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                  <Link
+                    to="/dashboard"
+                    className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+                  >
+                    <Home className="h-4 w-4" /> Traveller Dashboard
+                  </Link>
+                  <Link
+                    to="/host"
+                    className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+                  >
+                    <Plus className="h-4 w-4" /> Host Dashboard
+                  </Link>
+                </div>
+              </div>
               <Link
                 to="/dashboard/trips"
                 className="hidden rounded-full px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent/80 lg:block"

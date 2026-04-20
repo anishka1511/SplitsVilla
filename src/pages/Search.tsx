@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Search as SearchIcon, MapPin, Sliders, X } from "lucide-react";
 import { motion } from "framer-motion";
@@ -9,6 +9,7 @@ import { useSearchProperties } from "@/hooks/useApi";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { mockProperties } from "@/utils/mockData";
+import type { Property } from "@/types";
 import { SearchResultsSkeleton } from "@/components/SkeletonLoaders";
 import {
   AmbientBackgroundMotion,
@@ -16,6 +17,33 @@ import {
   BlurReveal,
   PageTransitionWrapper,
 } from "@/components/effects/AdvancedAnimations";
+
+const HOST_LISTINGS_KEY = "sv_host_listings";
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=1200";
+
+type HostLocalListing = {
+  id: string;
+  title: string;
+  type: string;
+  address: string;
+  city: string;
+  country: string;
+  pricePerNight: number;
+  maxGuests: number;
+  bedrooms: number;
+  bathrooms: number;
+  images: string[];
+  description: string;
+  amenities: string[];
+  createdAt: string;
+};
+
+function getFallbackCoordinates(seed: string) {
+  const hash = Array.from(seed || "host").reduce((acc, char, idx) => acc + char.charCodeAt(0) * (idx + 1), 0);
+  const lat = 20.5937 + ((hash % 300) - 150) * 0.01;
+  const lng = 78.9629 + ((hash % 500) - 250) * 0.01;
+  return { lat, lng };
+}
 
 const sortOptions = ["Recommended", "Price: Low to High", "Price: High to Low", "Rating"];
 const propertyTypes = ["All", "Villa", "Apartment", "Hotel", "Hostel", "Resort", "Cottage"];
@@ -95,7 +123,64 @@ export default function SearchPage() {
       : undefined
   );
 
-  const properties = apiProperties.length > 0 ? apiProperties : mockProperties;
+  const hostedProperties = useMemo<Property[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(HOST_LISTINGS_KEY);
+      const parsed = raw ? (JSON.parse(raw) as HostLocalListing[]) : [];
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return [];
+      }
+
+      return parsed
+        .filter((listing) => Boolean(listing?.id && listing?.title))
+        .map((listing) => {
+          const coords = getFallbackCoordinates(`${listing.city}-${listing.id}`);
+          return {
+            id: listing.id,
+            hostId: "host-local",
+            hostName: "You",
+            title: listing.title,
+            description: listing.description || "Hosted listing",
+            type: (listing.type?.toLowerCase() || "villa") as Property["type"],
+            location: {
+              address: listing.address || "Address pending",
+              city: listing.city || "City pending",
+              country: listing.country || "India",
+              lat: coords.lat,
+              lng: coords.lng,
+            },
+            images: listing.images?.length ? listing.images : [FALLBACK_IMAGE],
+            pricePerNight: Number(listing.pricePerNight || 0),
+            maxGuests: Number(listing.maxGuests || 1),
+            bedrooms: Number(listing.bedrooms || 1),
+            bathrooms: Number(listing.bathrooms || 1),
+            beds: Math.max(1, Number(listing.bedrooms || 1)),
+            amenities: listing.amenities?.length ? listing.amenities : ["WiFi"],
+            rules: {
+              checkInTime: "14:00",
+              checkOutTime: "11:00",
+              smokingAllowed: false,
+              petsAllowed: true,
+              partiesAllowed: false,
+            },
+            rating: 4.7,
+            reviewCount: 0,
+            isFeatured: false,
+            isActive: true,
+            createdAt: listing.createdAt || new Date().toISOString(),
+          };
+        });
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const properties = useMemo(() => {
+    const baseProperties = apiProperties.length > 0 ? apiProperties : mockProperties;
+    const baseIds = new Set(baseProperties.map((property) => property.id));
+    const uniqueHosted = hostedProperties.filter((property) => !baseIds.has(property.id));
+    return [...uniqueHosted, ...baseProperties];
+  }, [apiProperties, hostedProperties]);
 
   const filtered = properties
     .filter((p) => {

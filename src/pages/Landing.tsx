@@ -169,18 +169,19 @@ export default function Landing() {
         </div>
 
         {/* HERO - REDESIGNED WITH BETTER BACKGROUND */}
-        <section className="relative overflow-hidden">
+        <section className="relative min-h-[92vh] overflow-hidden lg:min-h-screen">
           {/* Premium background image */}
-          <div className="absolute inset-0">
+          <div className="fixed inset-0 z-0">
             <img
               src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop"
               alt="DreamTravel"
               className="h-full w-full object-cover"
             />
+            <div className="absolute inset-0 bg-black/30" />
           </div>
 
           {/* Animated background elements */}
-          <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute inset-0 z-10 overflow-hidden">
             <motion.div
               className="absolute top-1/4 left-1/3 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
               animate={{
@@ -200,7 +201,7 @@ export default function Landing() {
           </div>
 
           {/* Content */}
-          <div className="relative mx-auto max-w-6xl px-4 py-32 sm:px-6 lg:px-8 lg:py-40">
+          <div className="relative z-20 mx-auto flex min-h-[92vh] max-w-6xl flex-col justify-center px-4 py-24 sm:px-6 lg:min-h-screen lg:px-8 lg:py-32">
             <motion.h2
               className="-mt-4 mb-10 text-5xl text-slate-950 sm:text-6xl"
               style={{ fontFamily: '"Segoe Script", "Lucida Handwriting", cursive' }}
@@ -296,6 +297,8 @@ export default function Landing() {
             </motion.div>
           </div>
         </section>
+
+        <div className="relative z-30 bg-black">
 
         {/* SCROLLYTELLING STATS */}
         <ScrollytellingSection onScroll={setScrollProgress}>
@@ -674,6 +677,7 @@ export default function Landing() {
         </section>
 
         <Footer />
+        </div>
       </div>
     </PageTransitionWrapper>
   );

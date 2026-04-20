@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -8,6 +8,8 @@ import {
   BedDouble,
   Building2,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Coins,
   Home,
@@ -18,7 +20,9 @@ import {
   Shield,
   Sparkles,
   Star,
+  Upload,
   Users,
+  X,
 } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -119,17 +123,39 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-xs font-medium text-destructive">{message}</p>;
 }
 
+function parseImageEntries(rawValue?: string) {
+  if (!rawValue?.trim()) {
+    return [] as string[];
+  }
+
+  // Data URLs contain commas, so splitting by comma corrupts uploaded images.
+  if (rawValue.includes("data:image/")) {
+    return rawValue
+      .split(/\n+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return rawValue
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export default function BecomeAHost() {
   const { user, isAuthenticated, updateProfile } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [hasSavedDraft, setHasSavedDraft] = useState(false);
+  const [previewImageIndex, setPreviewImageIndex] = useState(0);
 
   const {
     register,
     handleSubmit,
     control,
     reset,
+    setValue,
     watch,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<BecomeHostFormData>({
@@ -151,20 +177,46 @@ export default function BecomeAHost() {
     });
   }, [reset, user]);
 
+  useEffect(() => {
+    const routeState = location.state as { scrollToForm?: boolean } | null;
+    if (!routeState?.scrollToForm) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const formElement = document.getElementById("host-form");
+      formElement?.scrollIntoView({ behavior: "smooth", block: "start" });
+      navigate(location.pathname, { replace: true, state: null });
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [location.pathname, location.state, navigate]);
+
   const values = watch();
 
-  const preview = useMemo(() => {
-    const parsedImageUrls = values.imageUrls
-      ? values.imageUrls
-          .split(/[\n,]/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : [];
+  const uploadedImages = useMemo(() => {
+    return parseImageEntries(values.imageUrls);
+  }, [values.imageUrls]);
 
+  useEffect(() => {
+    if (uploadedImages.length === 0) {
+      setPreviewImageIndex(0);
+      return;
+    }
+
+    if (previewImageIndex > uploadedImages.length - 1) {
+      setPreviewImageIndex(uploadedImages.length - 1);
+    }
+  }, [previewImageIndex, uploadedImages.length]);
+
+  const preview = useMemo(() => {
     const nightlyPrice = Number(values.nightlyPrice || 0);
     const maxGuests = Number(values.maxGuests || defaultValues.maxGuests);
     const bedrooms = Number(values.bedrooms || defaultValues.bedrooms);
-    const imageCount = parsedImageUrls.length;
+    const imageCount = uploadedImages.length;
+    const activeIndex = Math.min(previewImageIndex, Math.max(0, imageCount - 1));
 
     return {
       title: values.propertyTitle || "Sunset Ridge Villa",
@@ -174,10 +226,10 @@ export default function BecomeAHost() {
       maxGuests,
       bedrooms,
       imageCount,
-      firstImageUrl: parsedImageUrls[0] || "",
+      firstImageUrl: uploadedImages[activeIndex] || "",
       monthlyEstimate: Math.max(0, nightlyPrice * 12),
     };
-  }, [values]);
+  }, [previewImageIndex, uploadedImages, values]);
 
   useEffect(() => {
     const subscription = watch((currentValues) => {
@@ -228,6 +280,71 @@ export default function BecomeAHost() {
     previewElement.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const existing = uploadedImages;
+    const remainingSlots = Math.max(0, 6 - existing.length);
+    if (remainingSlots <= 0) {
+      toast({
+        title: "Image limit reached",
+        description: "You can upload up to 6 photos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const acceptedFiles = Array.from(files).slice(0, remainingSlots);
+    const validFiles = acceptedFiles.filter((file) => {
+      if (!file.type.startsWith("image/")) {
+        toast({
+          title: "Invalid file",
+          description: `${file.name} is not an image file.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      if (file.size > 2.5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: `${file.name} is larger than 2.5MB.`,
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      return true;
+    });
+
+    const dataUrls = await Promise.all(
+      validFiles.map(
+        (file) =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(new Error("Could not read image"));
+            reader.readAsDataURL(file);
+          }),
+      ),
+    );
+
+    if (dataUrls.length > 0) {
+      const next = [...existing, ...dataUrls].join("\n");
+      setValue("imageUrls", next, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+    }
+
+    event.target.value = "";
+  };
+
+  const removeImage = (indexToRemove: number) => {
+    const next = uploadedImages.filter((_, index) => index !== indexToRemove);
+    setValue("imageUrls", next.join("\n"), { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+  };
+
   const shouldShowPreview = isDirty || hasSavedDraft;
 
   return (
@@ -263,10 +380,22 @@ export default function BecomeAHost() {
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </a>
                   </Button>
-                  <Button asChild variant="outline" className="w-full rounded-full px-6 py-6 text-base font-semibold sm:w-auto">
+                  <Button
+                    asChild
+                    variant="secondary"
+                    className="w-full rounded-full border border-primary/35 bg-primary/15 px-6 py-6 text-base font-semibold text-primary hover:bg-primary/25 sm:w-auto"
+                  >
                     <a href="#host-steps">
                       View hosting steps
                     </a>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full rounded-full px-6 py-6 text-base font-semibold sm:w-auto"
+                    onClick={() => navigate("/host")}
+                  >
+                    Go to Host Dashboard
                   </Button>
                 </div>
               </section>
@@ -346,6 +475,34 @@ export default function BecomeAHost() {
                       loading="lazy"
                     />
                   )}
+                  {preview.imageCount > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewImageIndex((index) =>
+                            uploadedImages.length ? (index - 1 + uploadedImages.length) % uploadedImages.length : 0,
+                          )
+                        }
+                        className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/45 p-1.5 text-white/90 backdrop-blur transition hover:bg-black/65"
+                        aria-label="Previous photo"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPreviewImageIndex((index) =>
+                            uploadedImages.length ? (index + 1) % uploadedImages.length : 0,
+                          )
+                        }
+                        className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full bg-black/45 p-1.5 text-white/90 backdrop-blur transition hover:bg-black/65"
+                        aria-label="Next photo"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
                   <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(15,23,42,0.78),rgba(15,23,42,0.25)),radial-gradient(circle_at_top_right,rgba(255,255,255,0.16),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.12),transparent_28%)]" />
                   <div className="relative flex h-full flex-col justify-between">
                     <div className="flex items-center justify-between">
@@ -415,7 +572,7 @@ export default function BecomeAHost() {
                       </li>
                       <li className="flex items-start gap-3">
                         <Plus className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        A few clear images or image URLs for the first draft.
+                        A few clear photos for the first draft.
                       </li>
                     </ul>
                   </div>
@@ -572,9 +729,31 @@ export default function BecomeAHost() {
                       <p className="mt-1 text-xs text-muted-foreground">Separate items with commas.</p>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium text-foreground">Image URLs</label>
-                      <Textarea rows={4} placeholder="Paste one URL per line or comma-separated." {...register("imageUrls")} />
-                      <p className="mt-1 text-xs text-muted-foreground">Start with URLs now; upload support can come later.</p>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">Property photos</label>
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/10">
+                        <Upload className="h-4 w-4" />
+                        Upload photos
+                        <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+                      </label>
+                      <p className="mt-1 text-xs text-muted-foreground">Upload up to 6 photos (max 2.5MB each).</p>
+
+                      {uploadedImages.length > 0 && (
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {uploadedImages.map((src, index) => (
+                            <div key={`${src.slice(0, 16)}-${index}`} className="group relative overflow-hidden rounded-lg border border-border">
+                              <img src={src} alt={`Uploaded preview ${index + 1}`} className="h-20 w-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeImage(index)}
+                                className="absolute right-1 top-1 rounded-full bg-black/65 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                                aria-label={`Remove photo ${index + 1}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -655,7 +834,7 @@ export default function BecomeAHost() {
                       {isSubmitting
                         ? "Saving setup..."
                         : isAuthenticated
-                          ? "Continue to host dashboard"
+                          ? "Save and continue to host dashboard"
                           : "Continue to create account"}
                     </Button>
                   </div>
