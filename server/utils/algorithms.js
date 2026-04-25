@@ -18,6 +18,14 @@ export const settleExpenses = (expenses, members) => {
   members.forEach((m) => (balances[m] = 0));
 
   expenses.forEach((e) => {
+    if (e.settled) {
+      return;
+    }
+
+    if (!Array.isArray(e.splitAmong) || e.splitAmong.length === 0) {
+      return;
+    }
+
     const perPerson = e.amount / e.splitAmong.length;
     balances[e.paidBy] += e.amount;
     e.splitAmong.forEach((m) => (balances[m] -= perPerson));

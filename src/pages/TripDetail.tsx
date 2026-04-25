@@ -37,6 +37,7 @@ import {
   useUserSearch,
   useTripExpenses,
   useAddExpense,
+  useSetExpenseSettled,
   useDeleteTripInvite,
   useRemoveShortlistedProperty,
 } from "@/hooks/useApi";
@@ -62,6 +63,7 @@ export default function TripDetail() {
   const [openReserveDialog, setOpenReserveDialog] = useState(false);
   const [openTieDialog, setOpenTieDialog] = useState(false);
   const [inviteToDelete, setInviteToDelete] = useState<{ id: string; email: string } | null>(null);
+  const [selectedExpense, setSelectedExpense] = useState<any | null>(null);
   const [reserveError, setReserveError] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [memberSearch, setMemberSearch] = useState("");
@@ -87,6 +89,7 @@ export default function TripDetail() {
   const { data: searchResults = [], isLoading: isSearchingUsers } = useUserSearch(memberSearch);
   const { data: expenses = [], isLoading: isExpensesLoading, refetch: refetchExpenses } = useTripExpenses(id);
   const { mutateAsync: addExpense, isPending: isAddingExpense } = useAddExpense();
+  const { mutateAsync: setExpenseSettled, isPending: isUpdatingExpenseSettlement } = useSetExpenseSettled();
   const { mutateAsync: settleTripExpenses, isPending: isSettling } = useSettleExpenses();
   const { mutateAsync: estimateBudget, data: aiEstimate, isPending: isEstimating } = useAIBudgetEstimate();
   const { data: bookings = [], isLoading: isBookingsLoading, refetch: refetchBookings } = useBookings();
@@ -187,6 +190,17 @@ export default function TripDetail() {
     });
     return map;
   }, [displayMembers]);
+
+  const selectedExpenseSplit = useMemo(() => {
+    if (!selectedExpense?.splitAmong?.length) return [] as Array<{ userId: string; name: string; share: number }>;
+
+    const share = selectedExpense.amount / selectedExpense.splitAmong.length;
+    return selectedExpense.splitAmong.map((memberId: string) => ({
+      userId: memberId,
+      name: memberNameById.get(memberId) || "Member",
+      share,
+    }));
+  }, [memberNameById, selectedExpense]);
 
   const reservedPropertyIds = useMemo(() => {
     const ids = new Set<string>();
@@ -375,6 +389,27 @@ export default function TripDetail() {
       toast({ title: "Settlement calculated", description: `${normalized.length} transaction(s) generated` });
     } catch (error) {
       toast({ title: "Could not settle expenses", description: "Please retry.", variant: "destructive" });
+    }
+  };
+
+  const handleToggleExpenseSettled = async (expenseId: string, nextSettled: boolean) => {
+    if (!id) return;
+
+    try {
+      await setExpenseSettled({ tripId: id, expenseId, settled: nextSettled });
+      toast({
+        title: nextSettled ? "Marked as received" : "Marked as pending",
+        description: nextSettled
+          ? "This expense is now marked settled."
+          : "This expense is now back in pending state.",
+      });
+      await refetchExpenses();
+    } catch (error: any) {
+      toast({
+        title: "Could not update expense",
+        description: error?.message || "Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1041,13 +1076,33 @@ export default function TripDetail() {
                 </div>
                 <div className="mt-4 space-y-2">
                   {isExpensesLoading && <Skeleton className="h-16 w-full rounded-xl" />}
-                  {expenses.map((exp) => (
-                    <div key={exp.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${categoryColors[exp.category] || categoryColors.other}`}>
+                  {expenses.map((exp) => {
+                    const isSettled = Boolean(exp.settled);
+                    const isExpensePayer = extractId(exp.paidBy) === currentUserId;
+
+                    return (
+                    <div
+                      key={exp.id}
+                      className={`flex flex-col gap-3 rounded-xl border p-4 transition-colors sm:flex-row sm:items-center sm:gap-3 ${
+                        isSettled
+                          ? "border-muted bg-muted/40 opacity-75"
+                          : "border-border bg-card"
+                      }`}
+                    >
+                      <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${categoryColors[exp.category] || categoryColors.other}`}>
                         {exp.category}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">{exp.description}</p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className={`text-sm font-medium ${isSettled ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                            {exp.description}
+                          </p>
+                          {isSettled && (
+                            <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+                              Settled
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">Paid by {exp.paidByName}</p>
                         {exp.receipt && (
                           <a
@@ -1060,18 +1115,131 @@ export default function TripDetail() {
                           </a>
                         )}
                       </div>
-                      <span className="font-heading text-sm font-bold text-foreground">{formatCurrency(exp.amount)}</span>
+                      <div className="flex flex-col items-end gap-2 sm:items-end">
+                        <span className={`font-heading text-sm font-bold ${isSettled ? "text-muted-foreground" : "text-foreground"}`}>
+                          {formatCurrency(exp.amount)}
+                        </span>
+                        {isExpensePayer ? (
+                          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={isSettled}
+                              disabled={isUpdatingExpenseSettlement}
+                              onChange={(e) => {
+                                void handleToggleExpenseSettled(exp.id, e.target.checked);
+                              }}
+                              className="h-4 w-4 rounded border-border accent-primary"
+                            />
+                            Received
+                          </label>
+                        ) : (
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {isSettled ? "Received" : "Pending"}
+                          </span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-primary hover:bg-primary/10"
+                          onClick={() => setSelectedExpense(exp)}
+                        >
+                          View details
+                        </Button>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {!isExpensesLoading && expenses.length === 0 && <p className="text-sm text-muted-foreground">No expenses added yet.</p>}
                 </div>
               </div>
+
+              <Dialog open={!!selectedExpense} onOpenChange={(open) => !open && setSelectedExpense(null)}>
+                <DialogContent className="max-w-[92vw] overflow-hidden rounded-2xl sm:max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Expense details</DialogTitle>
+                  </DialogHeader>
+
+                  {selectedExpense && (
+                    <div className="space-y-5">
+                      <div className="rounded-2xl border border-border bg-muted/20 p-4 sm:p-5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${categoryColors[selectedExpense.category] || categoryColors.other}`}>
+                            {selectedExpense.category}
+                          </span>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${selectedExpense.settled ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+                            {selectedExpense.settled ? "Settled" : "Pending"}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-1">
+                          <h3 className="text-xl font-bold text-foreground">{selectedExpense.description}</h3>
+                          <p className="text-sm text-muted-foreground">Paid by {selectedExpense.paidByName}</p>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-xl bg-background px-4 py-3">
+                            <p className="text-xs text-muted-foreground">Amount</p>
+                            <p className="mt-1 font-heading text-lg font-bold text-foreground">{formatCurrency(selectedExpense.amount)}</p>
+                          </div>
+                          <div className="rounded-xl bg-background px-4 py-3">
+                            <p className="text-xs text-muted-foreground">Split people</p>
+                            <p className="mt-1 font-heading text-lg font-bold text-foreground">{selectedExpense.splitAmong?.length || 0}</p>
+                          </div>
+                          <div className="rounded-xl bg-background px-4 py-3">
+                            <p className="text-xs text-muted-foreground">Each share</p>
+                            <p className="mt-1 font-heading text-lg font-bold text-foreground">
+                              {selectedExpenseSplit[0] ? formatCurrency(selectedExpenseSplit[0].share) : formatCurrency(0)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">Split between</h4>
+                        <div className="mt-3 space-y-2">
+                          {selectedExpenseSplit.length > 0 ? (
+                            selectedExpenseSplit.map((member) => (
+                              <div key={member.userId} className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">{member.name}</p>
+                                  <p className="text-xs text-muted-foreground">Equal share</p>
+                                </div>
+                                <p className="text-sm font-semibold text-foreground">{formatCurrency(member.share)}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No split members found for this expense.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Receipt / Screenshot</p>
+                          <p className="text-xs text-muted-foreground">{selectedExpense.receipt ? "Available for viewing" : "No receipt attached"}</p>
+                        </div>
+                        {selectedExpense.receipt ? (
+                          <Button asChild variant="outline" className="w-full sm:w-auto">
+                            <a href={selectedExpense.receipt} target="_blank" rel="noreferrer">
+                              View bill/screenshot
+                            </a>
+                          </Button>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Not uploaded</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
+
               {/* Settlement */}
               <div className="mt-6 rounded-xl border border-border bg-card p-5">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-heading text-lg font-bold text-foreground">Settlement</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">Who owes whom</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Who owes whom (pending expenses only)</p>
                   </div>
                   <Button size="sm" onClick={handleSettleExpenses} disabled={isSettling}>
                     {isSettling ? "Calculating..." : "Calculate"}

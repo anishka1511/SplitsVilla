@@ -214,6 +214,17 @@ export function useTripExpenses(tripId: string | undefined) {
   });
 }
 
+export function useSetExpenseSettled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tripId, expenseId, settled }: { tripId: string; expenseId: string; settled: boolean }) =>
+      api.setExpenseSettled(tripId, expenseId, settled),
+    onSuccess: (_, { tripId }) => {
+      queryClient.invalidateQueries({ queryKey: ["expenses", tripId] });
+    },
+  });
+}
+
 export function useSettleExpenses() {
   const queryClient = useQueryClient();
   return useMutation({

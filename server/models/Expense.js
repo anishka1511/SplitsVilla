@@ -11,6 +11,9 @@ const expenseSchema = new mongoose.Schema(
     paidByName: String,
     splitAmong: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     receipt: String,
+    settled: { type: Boolean, default: false },
+    settledAt: { type: Date, default: null },
+    settledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );

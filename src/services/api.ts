@@ -341,6 +341,13 @@ class ApiClient {
     return this.request<Expense[]>(`/trips/${tripId}/expenses`);
   }
 
+  async setExpenseSettled(tripId: string, expenseId: string, settled: boolean) {
+    return this.request<Expense>(`/trips/${tripId}/expenses/${expenseId}/settled`, {
+      method: "PATCH",
+      body: JSON.stringify({ settled }),
+    });
+  }
+
   async settleExpenses(tripId: string) {
     return this.request<{ settlements: any[] }>(`/trips/${tripId}/expenses/settle`, {
       method: "POST",

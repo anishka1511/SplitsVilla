@@ -149,6 +149,9 @@ export interface Expense {
   paidByName: string;
   splitAmong: string[];
   receipt?: string;
+  settled?: boolean;
+  settledAt?: string | null;
+  settledBy?: string | null;
   createdAt: string;
 }
 

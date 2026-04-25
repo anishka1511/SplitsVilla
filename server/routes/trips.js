@@ -477,16 +477,68 @@ router.post(
   })
 );
 
-router.get("/:tripId/expenses", asyncHandler(async (req, res) => {
+router.get("/:tripId/expenses", authMiddleware, asyncHandler(async (req, res) => {
+  const trip = await Trip.findById(req.params.tripId);
+  if (!trip) return res.status(404).json({ message: "Trip not found" });
+
+  const isMember = trip.members.some((member) => member.userId.toString() === req.userId);
+  if (!isMember) {
+    return res.status(403).json({ message: "You do not have access to this trip expenses" });
+  }
+
   const expenses = await Expense.find({ tripId: req.params.tripId });
   res.json(expenses);
 }));
 
+router.patch(
+  "/:tripId/expenses/:expenseId/settled",
+  authMiddleware,
+  asyncHandler(async (req, res) => {
+    const { settled } = req.body;
+
+    if (typeof settled !== "boolean") {
+      return res.status(400).json({ message: "Settled value must be boolean" });
+    }
+
+    const trip = await Trip.findById(req.params.tripId);
+    if (!trip) return res.status(404).json({ message: "Trip not found" });
+
+    const isMember = trip.members.some((member) => member.userId.toString() === req.userId);
+    if (!isMember) {
+      return res.status(403).json({ message: "You do not have access to this trip expenses" });
+    }
+
+    const expense = await Expense.findOne({ _id: req.params.expenseId, tripId: req.params.tripId });
+    if (!expense) {
+      return res.status(404).json({ message: "Expense not found" });
+    }
+
+    if (expense.paidBy.toString() !== req.userId) {
+      return res.status(403).json({ message: "Only the payer can mark this expense as received" });
+    }
+
+    expense.settled = settled;
+    expense.settledAt = settled ? new Date() : null;
+    expense.settledBy = settled ? req.userId : null;
+    await expense.save();
+
+    res.json(expense);
+  })
+);
+
 router.post(
   "/:tripId/expenses/settle",
+  authMiddleware,
   asyncHandler(async (req, res) => {
     const trip = await Trip.findById(req.params.tripId);
-    const expenses = await Expense.find({ tripId: req.params.tripId });
+    if (!trip) return res.status(404).json({ message: "Trip not found" });
+
+    const isMember = trip.members.some((member) => member.userId.toString() === req.userId);
+    if (!isMember) {
+      return res.status(403).json({ message: "You do not have access to this trip expenses" });
+    }
+
+    const expenses = await Expense.find({ tripId: req.params.tripId, settled: { $ne: true } });
     const memberIds = trip.members.map((m) => m.userId.toString());
     const settlements = settleExpenses(expenses, memberIds);
     res.json({ settlements });
